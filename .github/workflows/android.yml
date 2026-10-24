@@ -65,7 +65,7 @@ jobs:
         run: |
           apk=android/app/build/outputs/apk/release/app-release.apk
           apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
-          "$apksigner" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256)"
+          "$apksigner" verify --print-certs "$apk" | grep -E "certificate (DN|SHA-256 digest)" || true
           "$apksigner" verify --print-certs "$apk" | grep -q "CN=Smart Feedback" || { echo "Not signed with the release key"; exit 1; }
           cp "$apk" smart-feedback.apk
 

@@ -1,0 +1,77 @@
+name: iOS simulator build
+
+# Builds the app for the iOS Simulator (no Apple account, no signing),
+# runs it on a simulated iPhone and saves screenshots. A simulator build
+# can't be installed on a real iPhone; that needs TestFlight.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ios-simulator
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      # The iOS project is generated on every build (ios/ isn't committed).
+      - name: Generate iOS project
+        run: |
+          npx cap add ios
+          npx cap sync ios
+          # Asked by iOS before the document scanner opens the camera.
+          /usr/libexec/PlistBuddy -c "Add :NSCameraUsageDescription string 'Smart Feedback uses the camera to scan answer sheets and question papers.'" ios/App/App/Info.plist
+          ls ios/App
+
+      - name: Build for the simulator
+        run: |
+          cd ios/App
+          if [ -d App.xcworkspace ]; then target="-workspace App.xcworkspace"; else target="-project App.xcodeproj"; fi
+          xcodebuild $target -scheme App -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/dd" CODE_SIGNING_ALLOWED=NO build | tail -25
+          app="$RUNNER_TEMP/dd/Build/Products/Debug-iphonesimulator/App.app"
+          test -d "$app"
+          echo "APP=$app" >> "$GITHUB_ENV"
+
+      # Zip for Appetize.io (upload it there to click through the app in a browser).
+      - name: Zip the app
+        run: |
+          mkdir -p out
+          (cd "$(dirname "$APP")" && zip -qry "$GITHUB_WORKSPACE/out/smart-feedback-ios-simulator.zip" App.app)
+          ls -la out
+
+      - name: Run on a simulated iPhone and take screenshots
+        run: |
+          udid=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          d = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in d if "iOS" in k), key=lambda k: [int(x) for x in k.split("iOS-")[-1].split("-")])
+          phones = [x for x in d[ios[-1]] if x["name"].startswith("iPhone") and "Pro" in x["name"]] or [x for x in d[ios[-1]] if x["name"].startswith("iPhone")]
+          print(phones[0]["udid"]); print(phones[0]["name"], ios[-1], file=sys.stderr)')
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$APP"
+          xcrun simctl launch "$udid" in.smartfeedback.app
+          for t in 15 30; do
+            sleep 15
+            xcrun simctl io "$udid" screenshot "out/screen-${t}s.png"
+          done
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator
+          path: out/

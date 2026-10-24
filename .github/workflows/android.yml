@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write   # to publish the APK as a pre-release
+  contents: write   # to publish the APK as a release
 
 concurrency:
   group: android-apk
@@ -38,32 +38,44 @@ jobs:
 
       - name: Set version
         run: |
-          v="0.1.${{ github.run_number }}"
+          v="0.2.${{ github.run_number }}"
           echo "APP_VERSION=$v" >> "$GITHUB_ENV"
           sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"$v\"/" android/app/build.gradle
           grep -E "versionCode|versionName" android/app/build.gradle
 
-      # Same key every build, so a new APK installs over the old one.
-      - name: Use the fixed debug key
-        run: mkdir -p ~/.android && cp keystore/debug.keystore ~/.android/debug.keystore
-
-      - name: Build APK
+      # Release key from GitHub Secrets (the only other copy is on the dev laptop,
+      # in ~/.smart-feedback-keys). Every APK must be signed with it, or phones
+      # refuse to update the installed app.
+      - name: Build signed release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          ./gradlew assembleRelease --no-daemon \
+            -Pandroid.injected.signing.store.file="$RUNNER_TEMP/release.keystore" \
+            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$KEYSTORE_PASSWORD"
+          rm -f "$RUNNER_TEMP/release.keystore"
 
-      - name: Publish pre-release
+      - name: Check signature
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          apksigner=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          "$apksigner" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256)"
+          "$apksigner" verify --print-certs "$apk" | grep -q "CN=Smart Feedback" || { echo "Not signed with the release key"; exit 1; }
+          cp "$apk" smart-feedback.apk
+
+      # A normal (not pre-) release, so /releases/latest/download/smart-feedback.apk
+      # always points at the newest build.
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          apk="smart-feedback-$APP_VERSION.apk"
-          cp android/app/build/outputs/apk/debug/app-debug.apk "$apk"
-          gh release create "v$APP_VERSION" "$apk" \
-            --prerelease --target "$GITHUB_SHA" \
-            --title "Smart Feedback $APP_VERSION" \
-            --notes "Test build from commit ${GITHUB_SHA::7}. Open this page on the phone, download the APK and tap it to install."
-
-      # The lock file can't be made on the dev laptop (npm is blocked there), so keep CI's copy.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: package-lock
-          path: package-lock.json
+          gh release create "v$APP_VERSION" smart-feedback.apk \
+            --target "$GITHUB_SHA" --latest \
+            --title "Smart Feedback $APP_VERSION (beta)" \
+            --notes "Beta build from commit ${GITHUB_SHA::7}. On an Android phone: download smart-feedback.apk, open it, and allow installing from this source if asked."

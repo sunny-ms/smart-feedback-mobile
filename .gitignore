@@ -4,3 +4,5 @@ android/
 ios/
 *.apk
 .DS_Store
+*.keystore
+*.jks

@@ -1,0 +1,69 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # to publish the APK as a pre-release
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      # The Android project is generated on every build (android/ isn't committed).
+      - name: Generate Android project
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Set version
+        run: |
+          v="0.1.${{ github.run_number }}"
+          echo "APP_VERSION=$v" >> "$GITHUB_ENV"
+          sed -i -E "s/versionCode [0-9]+/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"$v\"/" android/app/build.gradle
+          grep -E "versionCode|versionName" android/app/build.gradle
+
+      # Same key every build, so a new APK installs over the old one.
+      - name: Use the fixed debug key
+        run: mkdir -p ~/.android && cp keystore/debug.keystore ~/.android/debug.keystore
+
+      - name: Build APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Publish pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk="smart-feedback-$APP_VERSION.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "$apk"
+          gh release create "v$APP_VERSION" "$apk" \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Smart Feedback $APP_VERSION" \
+            --notes "Test build from commit ${GITHUB_SHA::7}. Open this page on the phone, download the APK and tap it to install."
+
+      # The lock file can't be made on the dev laptop (npm is blocked there), so keep CI's copy.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json

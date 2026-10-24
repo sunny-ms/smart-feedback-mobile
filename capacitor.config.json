@@ -1,0 +1,13 @@
+{
+  "appId": "in.smartfeedback.app",
+  "appName": "Smart Feedback",
+  "webDir": "www",
+  "server": {
+    "url": "https://smartfeedback.tutorpad.workers.dev",
+    "cleartext": false,
+    "errorPath": "error.html"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

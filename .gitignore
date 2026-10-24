@@ -1,0 +1,6 @@
+node_modules/
+# Generated in CI by `npx cap add android`; not committed while this is a prototype.
+android/
+ios/
+*.apk
+.DS_Store

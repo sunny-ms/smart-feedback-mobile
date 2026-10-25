@@ -3,9 +3,12 @@
   "appName": "Smart Feedback",
   "webDir": "www",
   "server": {
-    "url": "https://smartfeedback.tutorpad.workers.dev",
+    "url": "https://smartfeedback.evalora.tech",
     "cleartext": false,
-    "errorPath": "error.html"
+    "errorPath": "error.html",
+    "allowNavigation": [
+      "api.smartfeedback.evalora.tech"
+    ]
   },
   "android": {
     "allowMixedContent": false

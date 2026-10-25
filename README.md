@@ -3,7 +3,7 @@
 **Download:** https://github.com/sunny-ms/smart-feedback-mobile/releases/latest/download/smart-feedback.apk
 
 A [Capacitor 8](https://capacitorjs.com) shell that opens the live site
-(`https://smartfeedback.tutorpad.workers.dev`) and adds Google's ML Kit
+(`https://smartfeedback.evalora.tech`) and adds Google's ML Kit
 document scanner through
 [`@capgo/capacitor-document-scanner`](https://github.com/Cap-go/capacitor-document-scanner).
 
